@@ -7,6 +7,9 @@ from matplotlib.pyplot import figure
 import pandas as pd
 from config import *
 from loader import PathManager
+import warnings
+
+warnings.filterwarnings('ignore')
 
 
 class Evaluator:
@@ -19,18 +22,20 @@ class Evaluator:
     def __init__(self, paths: PathManager):
         self.overall = {}
         self.results_p = paths.results_p
-    
-    def eval_overall(self, test_y, preds):
+
+    def eval_sota(self, test_y, preds):
         acc = sklearn.metrics.accuracy_score(test_y, preds)
         rec = sklearn.metrics.recall_score(test_y, preds)
         prec = sklearn.metrics.precision_score(test_y, preds)
         f1 = sklearn.metrics.f1_score(test_y, preds)
         tn, fp, fn, tp = sklearn.metrics.confusion_matrix(test_y, preds).ravel()
+        fpr = fp / fp + tn
         overall = {
             "accuracy": acc,
             "recall": rec,
             "precision": prec,
             "f1-score": f1,
+            "fpr": fpr,
             "tn": tn,
             "fp":fp,
             "fn": fn,
@@ -76,11 +81,11 @@ class Evaluator:
             results_p = self.results_p
         return results_p    
 
-    def bin_preds_for_given_fpr(self, test_y, preds_proba, desired_fpr, verbose=False):
+    def bin_preds_for_given_fpr(self, test_y, preds_proba, desired_fprs, verbose=False):
         #compute the roc curve using model prediction probabilities 
         #select the index of the fpr to consider, find the thresholds for the desired FPRs, and compute binary predictions based on FPR thresholds 
         fpr, tpr, thresholds = metrics.roc_curve(test_y, preds_proba[:,1])
-        fpr_indexes = [np.argmax(fpr > val) for val in desired_fpr] 
+        fpr_indexes = [np.argmax(fpr > val) for val in desired_fprs] 
         fpr_thresholds = thresholds[fpr_indexes]
         bin_preds_fpr = [(preds_proba > val).astype(int)[:, 1] for val in fpr_thresholds]
 
@@ -89,70 +94,102 @@ class Evaluator:
         
         return bin_preds_fpr
 
+    def atk_sequence_from_seq_idxs(self, test_y, bin_pred, seq, last):
+        seq_y = test_y[seq]
+        seq_preds = np.array(bin_pred[last: last + seq_y.shape[0]])
+        y_test_atk = np.where(seq_y == 1)[0]
+        if len(y_test_atk) == 0:  # No attacks in this sequence
+            last += len(seq_y)
+
+        return seq_y, seq_preds, y_test_atk, last
+
+    def eval_sequence_latency(self, seq, y_test_atk, test_timestamp, seq_preds):
+        # Compute attack timing
+        attack_start_idx = seq[y_test_atk[0]]
+        attack_end_idx = seq[y_test_atk[-1]]
+        attack_time = test_timestamp[attack_end_idx] - test_timestamp[attack_start_idx]
     
-    def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fpr=DESIRED_FPRS, results_p=None, verbose=False):
+        # Detect first attack occurrence
+        if 1 in seq_preds[y_test_atk]:
+            index_rel = np.where(seq_preds[y_test_atk] == 1)[0][0]
+            index_abs = seq[y_test_atk[index_rel]]
+            detection_time = test_timestamp[index_abs] - test_timestamp[attack_start_idx]
+            detected = 1
+        else:
+            index_rel = len(seq) - 1
+            index_abs = seq[y_test_atk[index_rel]]
+            detection_time = attack_time  # If undetected, assign full attack time
+            detected = 0
+
+        latency_seq_res = {
+            "atk_start_idx": attack_start_idx,
+            "atk_end_idx": attack_end_idx,
+            "atk_time": attack_time,
+            "det_idx_rel": index_rel,
+            "det_idx_abs": index_abs,
+            "det_time": detection_time,
+            "det": detected
+        }
+
+        return latency_seq_res
+            
+        
+
+    def eval_all_attack_sequences(self, test_y, test_multi, test_timestamp, test_seq, bin_pred, desired_fpr, results_p, verbose):
+        sequences_results = pd.DataFrame(columns=[
+            'start_idx_attack', 'end_idx_attack', 'attack_duration', 'time_to_detect',
+            'idx_detection_abs', 'idx_detection_rel', 'attack_len', 'attack_type',
+            'pr', 'rec', 'fpr', 'tn', 'fp', 'fn', 'tp', 'target_fpr', 'detected'])
+    
+        last = 0  
+    
+        for i, seq in enumerate(test_seq):
+
+            seq_y, seq_preds, y_test_atk, last = self.atk_sequence_from_seq_idxs(test_y, bin_pred, seq, last)
+            seq_sota_eval = self.eval_sota(seq_y, seq_preds)
+            latency_seq_res = self.eval_sequence_latency(seq, y_test_atk, test_timestamp, seq_preds)
+        
+            # Store results in DataFrame
+            sequences_results.loc[i] = {
+                'start_idx_attack': latency_seq_res['atk_start_idx'],
+                'end_idx_attack': latency_seq_res['atk_end_idx'],
+                'attack_duration': latency_seq_res['atk_time'],
+                'time_to_detect': latency_seq_res['det_time'],
+                'idx_detection_abs': latency_seq_res['det_idx_abs'],
+                'idx_detection_rel': latency_seq_res['det_idx_rel'],
+                'attack_len': len(y_test_atk),
+                'attack_type': test_multi[latency_seq_res['atk_start_idx']],
+                'pr': seq_sota_eval['precision'],
+                'rec': seq_sota_eval['recall'],
+                'fpr': seq_sota_eval['fpr'],
+                'fp': seq_sota_eval['fp'],
+                'fn': seq_sota_eval['fn'],
+                'tp': seq_sota_eval['tp'],
+                'tn': seq_sota_eval['tn'],
+                'target_fpr': desired_fpr,
+                'detected': latency_seq_res['det']
+            }
+            
+            last += len(seq_y)
+        
+        if verbose: 
+            sequences_results.to_csv(os.path.join(results_p,  str(desired_fpr) + '.csv'), index=None)
+        
+        return sequences_results
+        
+    
+    def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
         
         results_p = self.check_if_out_path_is_given(results_p)
 
-        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fpr, verbose)
+        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fprs, verbose)
 
-        
-        sequences_results = []
-        for val, des_fpr in zip(bin_preds_fpr, desired_fpr):
-            bin_pred = val
-        
-            fpr_results = pd.DataFrame(columns=['start_idx_attack', 'end_idx_attack', 'attack_duration', 'time_to_detect', 'idx_detection_abs', 'idx_detection_rel', 'attack_len', 'attack_type','fpr','pr','rec','tn', 'fp','fn','tp','target_fpr', 'detected'])
-            last = 0
-            i = 0
-    
-            for seq in test_seq:
-                seq_y = test_y[seq]
-                seq_preds = bin_pred[last: last + seq_y.shape[0]]
-                seq_preds = np.array(seq_preds)
-    
-                seq_check = test_y[last: last + seq_y.shape[0]]
-                y_test_atk = np.where(test_y[seq] == 1)[0]
-                #y_test_norm = np.where(test_y[seq] ==  0)[0]
-    
-                conf_matrix = sklearn.metrics.confusion_matrix(seq_y, seq_preds)
-                #TODO CASES WHERE SOME METRICS IN CONF MATRIX ARE NOT AVAILABLE TRY CATCH
-                tn, fp, fn, tp = conf_matrix.ravel()
-                pr = sklearn.metrics.precision_score(seq_y, seq_preds)
-                rec = sklearn.metrics.recall_score(seq_y, seq_preds)
-        
-                preds_1 = seq_preds[y_test_atk]
-        
-                date_time_0 = test_timestamp[seq[y_test_atk[0]]]
-                date_time_last = test_timestamp[seq[y_test_atk[len(y_test_atk)-1]]]
-                attack_time = date_time_last - date_time_0
-        
-                if 1 in seq_preds[y_test_atk]:
-                    index_rel = np.where(seq_preds[y_test_atk] == 1)[0][0]
-                    index = seq[y_test_atk[index_rel]]
-        
-                    date_time_index = test_timestamp[index]
-                    detection_time = date_time_index - date_time_0
-                    detected = 1
-                else:
-                    index_rel = len(seq) - 1
-                    index = seq[y_test_atk[index_rel]]
-                    #TODO ADD A TIME DELTA TO LATENCY WHEN SEQUENCE IS NOT DETECTED
-                    detection_time = attack_time
-                    detected = 0
+        sequences_results_fprs = []
+        for bin_pred, des_fpr in zip(bin_preds_fpr, desired_fprs):
+            sequences_results = self.eval_all_attack_sequences(test_y, test_multi, test_timestamp, test_seq, bin_pred, des_fpr, results_p, verbose)
+            sequences_results_fprs.append(sequences_results)
             
-                fpr_results.loc[i] = pd.Series({'start_idx_attack': seq[y_test_atk[0]], 'end_idx_attack': seq[y_test_atk[len(y_test_atk)-1]],
-                                   'attack_duration': attack_time , 'time_to_detect': detection_time, 'idx_detection_abs': index,
-                                   'idx_detection_rel':index_rel, 'attack_len': y_test_atk.shape[0],
-                                   'attack_type':test_multi[seq[y_test_atk[0]]], 'pr': pr, 'rec': rec,
-                                   'fp':fp, 'fn':fn, 'tp':tp, 'tn':tn, 'target_fpr':des_fpr, 'detected': detected})
-                last = last+len(seq_y)
-                i = i+1
-                
-                #LOG ALL INTERMEDIATE IF VERBOSE 
-                #fpr_results.to_csv(os.path.join(results_p,  str(des_fpr) + '.csv'), index=None)
-            
-            sequences_results.append(fpr_results)        
-        return sequences_results
+        return sequences_results_fprs
 
     def avg_fpr_latency(self, sequences_results, results_p=None):
         #if the path is not provided by argument take the one in object param.
