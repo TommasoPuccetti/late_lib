@@ -217,43 +217,47 @@ class Evaluator:
                 detection_rate_df.to_excel(writer, index=False, sheet_name='attacks_detection_rate')
                 all_result_df.to_excel(writer, index=False, sheet_name='all_summary')
 
-    def fpr_latency(self):
-        i = 0
-        df = pd.read_excel(root+split+xlsx_files[0], sheet_name='avg_results_for_attacks_type')
-        features = df['attack_type_'].unique()
-        features = list(features)
-        features.append('target_fpr')
-        print(features)
+    
+    def summary_fpr_latency(self, results_p=None):
+        #if the path is not provided by argument take the one in object param.
+        if results_p == None:
+            results_p = self.results_p
         
-        df_out = pd.DataFrame(columns=features)
+        files = os.listdir(results_p)
+        print(results_p)
+
+        xlsx_files = [file for file in files if file.endswith('.xlsx')]
+        print(xlsx_files)
+        print("########################################################################")
+        df_out = pd.DataFrame()
+        rows_fpr = []
+        rows_sdr = []
         for file in xlsx_files:
             print('---------------------------')
-            df = pd.read_excel(root + split + file, sheet_name='avg_results_for_attacks_type')
-            features = df['attack_type_'].unique()
-            features = list(features)
-            features.append('target_fpr')
-            print(features)
-        
-            latency = []
-            for index, row in df.iterrows():
-                latency.append(row['time_to_detect_mean'])
-                print(row['time_to_detect_mean'])
-                print(row['attack_type_'])
-                print('----')
-        
-            df_1 = pd.read_excel(root + split + file, sheet_name='sequences_results')
-        
-            # Round the numbers for precision, change 3.49275472 to a rounded value
-            my_dict = dict(zip(features, latency))
-            my_dict.update({'target_fpr': round(df_1['target_fpr'].loc[1], 5)})  # Adjust precision
-            print(my_dict)
-        
-            # Convert the dictionary to a pandas Series for adding to the dataframe
-            series_to_add = pd.Series(my_dict, index=features)
-            df_out = df_out.append(series_to_add, ignore_index=True)
-        
-        # Save the dataframe to a CSV file
-        path = root + split + 'all_results.csv'
-        df_out.to_csv(path, index=None)
+            df_fpr = pd.read_excel(os.path.join(results_p, file) , sheet_name='avg_results_for_attacks_type')
+            df_sdr = pd.read_excel(os.path.join(results_p, file) , sheet_name='attacks_detection_rate')
+            target_fpr = df_sdr['target_fpr'].unique()[0]
+            
+            df_fpr_out = df_fpr.set_index('attack_type_').T
+            selected_row = df_fpr_out.loc['time_to_detect_mean']
+            selected_row = selected_row.to_frame().T
+            selected_row['target_fpr'] = [target_fpr]
+            rows_fpr.append(selected_row)
+
+            df_sdr_out = df_sdr.set_index('attack_type').T
+            selected_row = df_sdr_out.loc['count_ratio']
+            selected_row = selected_row.to_frame().T
+            selected_row['target_fpr'] = [target_fpr]
+            rows_sdr.append(selected_row)
+
+        df_fpr_out = pd.concat(rows_fpr, ignore_index=True)
+        df_sdr_out = pd.concat(rows_sdr, ignore_index=True)
+        print(df_fpr_out)
+        print(df_sdr_out)
+
+        # Save the result and another DataFrame in the same Excel file
+        with pd.ExcelWriter(os.path.join(results_p,  'final_results.xlsx'), engine='xlsxwriter') as writer:
+            df_fpr_out.to_excel(writer, index=False, sheet_name='fpr_latency_tradeoff')
+            df_sdr_out.to_excel(writer, index=False, sheet_name='fpr_sdr_tradeoff')
 
 
