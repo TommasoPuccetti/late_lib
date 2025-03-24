@@ -10,7 +10,7 @@ from loader import PathManager
 
 
 class Evaluator:
-    """Evaluate performance of a detector given prediction probabilities and labels.
+    """ Evaluate the performance of a detector given prediction probabilities and labels.
      Evaluator can perform:
      - overall evaluation: it returns the evaluation calculated by the  
      Attributes:
@@ -69,35 +69,39 @@ class Evaluator:
             results_p = self.results_p
         self.plot_precision_recall(test_y, preds_proba, results_p)
         self.plot_roc(test_y, preds_proba, results_p)
-                    
-    def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fpr=DESIRED_FPR, results_p=None, verbose=False):
-        
+
+    def check_if_out_path_is_given(self, results_p):
         #if the path is not provided by argument take the one in object param.
         if results_p == None:
             results_p = self.results_p
-        
-        #compute the roc curve using the model prediction probabilities     
+        return results_p    
+
+    def bin_preds_for_given_fpr(self, test_y, preds_proba, desired_fpr, verbose=False):
+        #compute the roc curve using model prediction probabilities 
+        #select the index of the fpr to consider, find the thresholds for the desired FPRs, and compute binary predictions based on FPR thresholds 
         fpr, tpr, thresholds = metrics.roc_curve(test_y, preds_proba[:,1])
-        fpr_indexes = []
-        #select the index of the fpr to consider 
-        for val in desired_fpr:
-            index = np.argmax(fpr > val)
-            fpr_indexes.append(index)
-        #find the threshold to obtain such fpr
-        fpr_thresholds = thresholds[fpr_indexes] 
-        bin_preds_fpr = []
-        for val in fpr_thresholds:
-            bin_pred = (preds_proba > val).astype(int)[:, 1]
-            bin_preds_fpr.append(bin_pred)
-            if verbose: print(bin_preds_fpr)
+        fpr_indexes = [np.argmax(fpr > val) for val in desired_fpr] 
+        fpr_thresholds = thresholds[fpr_indexes]
+        bin_preds_fpr = [(preds_proba > val).astype(int)[:, 1] for val in fpr_thresholds]
 
+        if verbose:
+            print(bin_preds_fpr)
+        
+        return bin_preds_fpr
+
+    
+    def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fpr=DESIRED_FPRS, results_p=None, verbose=False):
+        
+        results_p = self.check_if_out_path_is_given(results_p)
+
+        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fpr, verbose)
+
+        
         sequences_results = []
-        #store fpr values with relative binary prediction obtaine from using a specific threshold
-        for val, des_fpr in zip(bin_preds_fpr, DESIRED_FPR):
+        for val, des_fpr in zip(bin_preds_fpr, desired_fpr):
             bin_pred = val
-        #REFACTOR TILL HERE IN DEDICATED FUNCTION FOR FPR DEFINITION 
-
-            fpr_results = pd.DataFrame(columns=['start_idx_attack', 'end_idx_attack', 'attack_duration', 'time_to_detect', 'idx_detection_abs', 'idx_detection_rel', 'attack_len', 'attack_type','fpr','tpr','pr','rec','tn', 'fp','fn','tp','target_fpr', 'detected'])
+        
+            fpr_results = pd.DataFrame(columns=['start_idx_attack', 'end_idx_attack', 'attack_duration', 'time_to_detect', 'idx_detection_abs', 'idx_detection_rel', 'attack_len', 'attack_type','fpr','pr','rec','tn', 'fp','fn','tp','target_fpr', 'detected'])
             last = 0
             i = 0
     
@@ -107,8 +111,8 @@ class Evaluator:
                 seq_preds = np.array(seq_preds)
     
                 seq_check = test_y[last: last + seq_y.shape[0]]
-                y_test_atk= np.where(test_y[seq] == 1)[0]
-                y_test_norm= np.where(test_y[seq] ==  0)[0]
+                y_test_atk = np.where(test_y[seq] == 1)[0]
+                #y_test_norm = np.where(test_y[seq] ==  0)[0]
     
                 conf_matrix = sklearn.metrics.confusion_matrix(seq_y, seq_preds)
                 #TODO CASES WHERE SOME METRICS IN CONF MATRIX ARE NOT AVAILABLE TRY CATCH
@@ -139,7 +143,7 @@ class Evaluator:
                 fpr_results.loc[i] = pd.Series({'start_idx_attack': seq[y_test_atk[0]], 'end_idx_attack': seq[y_test_atk[len(y_test_atk)-1]],
                                    'attack_duration': attack_time , 'time_to_detect': detection_time, 'idx_detection_abs': index,
                                    'idx_detection_rel':index_rel, 'attack_len': y_test_atk.shape[0],
-                                   'attack_type':test_multi[seq[y_test_atk[0]]], 'tpr': tpr, 'pr': pr, 'rec': rec,
+                                   'attack_type':test_multi[seq[y_test_atk[0]]], 'pr': pr, 'rec': rec,
                                    'fp':fp, 'fn':fn, 'tp':tp, 'tn':tn, 'target_fpr':des_fpr, 'detected': detected})
                 last = last+len(seq_y)
                 i = i+1
@@ -256,7 +260,7 @@ class Evaluator:
         print(df_sdr_out)
 
         # Save the result and another DataFrame in the same Excel file
-        with pd.ExcelWriter(os.path.join(results_p,  'final_results.xlsx'), engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(os.path.join(results_p,  'final/final_results.xlsx'), engine='xlsxwriter') as writer:
             df_fpr_out.to_excel(writer, index=False, sheet_name='fpr_latency_tradeoff')
             df_sdr_out.to_excel(writer, index=False, sheet_name='fpr_sdr_tradeoff')
 
