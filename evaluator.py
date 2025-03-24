@@ -8,6 +8,7 @@ import pandas as pd
 from config import *
 from loader import PathManager
 import warnings
+import results_handler as rh 
 
 warnings.filterwarnings('ignore')
 
@@ -30,22 +31,10 @@ class Evaluator:
         f1 = sklearn.metrics.f1_score(test_y, preds)
         tn, fp, fn, tp = sklearn.metrics.confusion_matrix(test_y, preds).ravel()
         fpr = fp / fp + tn
-        overall = {
-            "accuracy": acc,
-            "recall": rec,
-            "precision": prec,
-            "f1-score": f1,
-            "fpr": fpr,
-            "tn": tn,
-            "fp":fp,
-            "fn": fn,
-            "tp": tp
-        }
-        self.overall = overall 
-        print("Accuracy: {}, \nRecall: {}, \nPrecision: {}, \nF1-Score: {}".format(acc, rec, prec, f1))
-        print("TP: {}, \nFP: {}, \nTN: {}, \nFN: {}".format(tp, fp, tn, fn))
-        print(PRINT_SEPARATOR)
-        return overall
+        sota_results = rh.store_sota_results(acc, rec, prec, f1, fpr, tn, fp, fn, tp)
+        self.overall = sota_results 
+        
+        return sota_results
     
     def plot_roc(self, test_y, preds_proba, results_p=None):
         if results_p == None:
@@ -136,48 +125,18 @@ class Evaluator:
         
 
     def eval_all_attack_sequences(self, test_y, test_multi, test_timestamp, test_seq, bin_pred, desired_fpr, results_p, verbose):
-        sequences_results = pd.DataFrame(columns=[
-            'start_idx_attack', 'end_idx_attack', 'attack_duration', 'time_to_detect',
-            'idx_detection_abs', 'idx_detection_rel', 'attack_len', 'attack_type',
-            'pr', 'rec', 'fpr', 'tn', 'fp', 'fn', 'tp', 'target_fpr', 'detected'])
-    
+        sequences_results = rh.init_sequence_results_dict()
         last = 0  
-    
         for i, seq in enumerate(test_seq):
-
             seq_y, seq_preds, y_test_atk, last = self.atk_sequence_from_seq_idxs(test_y, bin_pred, seq, last)
             seq_sota_eval = self.eval_sota(seq_y, seq_preds)
             latency_seq_res = self.eval_sequence_latency(seq, y_test_atk, test_timestamp, seq_preds)
-        
-            # Store results in DataFrame
-            sequences_results.loc[i] = {
-                'start_idx_attack': latency_seq_res['atk_start_idx'],
-                'end_idx_attack': latency_seq_res['atk_end_idx'],
-                'attack_duration': latency_seq_res['atk_time'],
-                'time_to_detect': latency_seq_res['det_time'],
-                'idx_detection_abs': latency_seq_res['det_idx_abs'],
-                'idx_detection_rel': latency_seq_res['det_idx_rel'],
-                'attack_len': len(y_test_atk),
-                'attack_type': test_multi[latency_seq_res['atk_start_idx']],
-                'pr': seq_sota_eval['precision'],
-                'rec': seq_sota_eval['recall'],
-                'fpr': seq_sota_eval['fpr'],
-                'fp': seq_sota_eval['fp'],
-                'fn': seq_sota_eval['fn'],
-                'tp': seq_sota_eval['tp'],
-                'tn': seq_sota_eval['tn'],
-                'target_fpr': desired_fpr,
-                'detected': latency_seq_res['det']
-            }
-            
+            sequences_results = rh.store_sequence_results(sequences_results, latency_seq_res, seq_sota_eval, y_test_atk, test_multi, desired_fpr)
             last += len(seq_y)
-        
         if verbose: 
             sequences_results.to_csv(os.path.join(results_p,  str(desired_fpr) + '.csv'), index=None)
-        
         return sequences_results
         
-    
     def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
         
         results_p = self.check_if_out_path_is_given(results_p)

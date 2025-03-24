@@ -34,12 +34,6 @@ ev = Evaluator(pm)
 
 # Evaluate FPR / Latency trade-off
 sequences_results = ev.eval_fpr_latency(dl.test_y, dl.test_multi, dl.test_timestamp, dl.test_seq, dl.preds_proba)
-print("\n")
-print("\n")
-print(len(sequences_results))
-print(sequences_results)
-print("\n")
-print("\n")
 avg_results = ev.avg_fpr_latency(sequences_results)
 ev.summary_fpr_latency()
 
