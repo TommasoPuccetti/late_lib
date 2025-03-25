@@ -87,7 +87,7 @@ class Evaluator:
         seq_y = test_y[seq]
         seq_preds = np.array(bin_pred[last: last + seq_y.shape[0]])
         y_test_atk = np.where(seq_y == 1)[0]
-        if len(y_test_atk) == 0:  # No attacks in this sequence
+        if len(y_test_atk) == 0:
             last += len(seq_y)
 
         return seq_y, seq_preds, y_test_atk, last
@@ -121,8 +121,6 @@ class Evaluator:
         }
 
         return latency_seq_res
-            
-        
 
     def eval_all_attack_sequences(self, test_y, test_multi, test_timestamp, test_seq, bin_pred, desired_fpr, results_p, verbose):
         sequences_results = rh.init_sequence_results_dict()
@@ -155,87 +153,36 @@ class Evaluator:
         if results_p == None:
             results_p = self.results_p
             
-        for fpr_result in sequences_results: 
-            print("---------------------------------")
-            print(len(sequences_results))
-            print("---------------------------------")
-            print(fpr_result)
-            df = fpr_result
+        for df in sequences_results: 
+            num_seq = df.shape[0]
             # calculate time_to_detect (attack latency) for all the detected sequences 
             df_detect = df[df['detected'] != 0]
             df_detect['time_to_detect'] = pd.to_timedelta(df['time_to_detect']).dt.total_seconds()
-            
             #calculate sequence detection rate
             grouped_df = df_detect.groupby('attack_type')
-            print(grouped_df)
-            
             grouped_df_det = df_detect.groupby('attack_type').size().reset_index(name='count_det')
             grouped_df_tot = df.groupby('attack_type').size().reset_index(name='count_tot')
-            print(grouped_df_tot)
 
             detection_rate_df = pd.merge(grouped_df_det, grouped_df_tot, on='attack_type', how='outer')
             detection_rate_df['count_ratio'] = detection_rate_df['count_det'] / detection_rate_df['count_tot']
             target_fpr = str(df['target_fpr'].unique()[0])
             detection_rate_df['target_fpr'] = target_fpr
-            #print(detection_rate_df)
-        
-            # Calculate average, min, max, and std for each group
-            avg_result_df = grouped_df.agg({
-                'attack_len': ['mean', 'min', 'max', 'std'],
-                'fpr': 'mean',
-                'pr': 'mean',
-                'rec': 'mean',
-                'time_to_detect': ['mean', 'min', 'max', 'std'],
-                'idx_detection_rel': ['mean', 'min', 'max', 'std']
-            }).reset_index()
 
-    
-            
-            # Calculate aggregated statistics
-            result_dict = {
-                'detected_sequences': len(df_detect),
-                'percent_detected_sequences':(df.shape[0] - len(df_detect))/len(df_detect),
-                'avg_time_to_detect': df_detect['time_to_detect'].mean(),
-                'std_time_to_detect': df_detect['time_to_detect'].std(),
-                'min_time_to_detect': df_detect['time_to_detect'].min(),
-                'max_time_to_detect': df_detect['time_to_detect'].max(),
-                'avg_idx_detection_rel': df_detect['idx_detection_rel'].mean(),
-                'std_idx_detection_rel': df_detect['idx_detection_rel'].std(),
-                'min_idx_detection_rel': df_detect['idx_detection_rel'].min(),
-                'max_idx_detection_rel': df_detect['idx_detection_rel'].max(),
-                'target_fpr':df['target_fpr']}
-            
-            all_result_df = pd.DataFrame([result_dict])
-        
-            avg_result_df.columns = ['_'.join(col) for col in avg_result_df.columns]
-            
-            # Save the result and another DataFrame in the same Excel file
-            with pd.ExcelWriter(os.path.join(results_p,  target_fpr + '_all.xlsx'), engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='sequences_results')
-                df_detect.to_excel(writer, index=False, sheet_name='detected_sequences_results')
-                avg_result_df.to_excel(writer, index=False, sheet_name='avg_results_for_attacks_type')
-                detection_rate_df.to_excel(writer, index=False, sheet_name='attacks_detection_rate')
-                all_result_df.to_excel(writer, index=False, sheet_name='all_summary')
-
+            avg_result_df = rh.store_results_for_attack_type(grouped_df)
+            all_results_df = rh.store_overall_results(num_seq, target_fpr, df_detect)
+            rh.all_latency_results_to_excel(results_p, target_fpr, df, df_detect, avg_result_df, detection_rate_df, all_results_df)
     
     def summary_fpr_latency(self, results_p=None):
-        #if the path is not provided by argument take the one in object param.
-        if results_p == None:
-            results_p = self.results_p
-        
+        results_p = self.check_if_out_path_is_given(results_p)
         files = os.listdir(results_p)
-        print(results_p)
-
         xlsx_files = [file for file in files if file.endswith('.xlsx')]
-        print(xlsx_files)
-        print("########################################################################")
+    
         df_out = pd.DataFrame()
         rows_fpr = []
         rows_sdr = []
         for file in xlsx_files:
-            print('---------------------------')
-            df_fpr = pd.read_excel(os.path.join(results_p, file) , sheet_name='avg_results_for_attacks_type')
-            df_sdr = pd.read_excel(os.path.join(results_p, file) , sheet_name='attacks_detection_rate')
+            df_fpr = pd.read_excel(os.path.join(results_p, file) , sheet_name='avg_results_for_attack_type')
+            df_sdr = pd.read_excel(os.path.join(results_p, file) , sheet_name='detection_rate_for_attack_type')
             target_fpr = df_sdr['target_fpr'].unique()[0]
             
             df_fpr_out = df_fpr.set_index('attack_type_').T
@@ -254,10 +201,7 @@ class Evaluator:
         df_sdr_out = pd.concat(rows_sdr, ignore_index=True)
         print(df_fpr_out)
         print(df_sdr_out)
+        rh.summary_fpr_latency_sdr_to_excel(results_p, df_fpr_out, df_sdr_out)
 
-        # Save the result and another DataFrame in the same Excel file
-        with pd.ExcelWriter(os.path.join(results_p,  'final/final_results.xlsx'), engine='xlsxwriter') as writer:
-            df_fpr_out.to_excel(writer, index=False, sheet_name='fpr_latency_tradeoff')
-            df_sdr_out.to_excel(writer, index=False, sheet_name='fpr_sdr_tradeoff')
 
 

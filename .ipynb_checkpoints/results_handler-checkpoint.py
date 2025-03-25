@@ -1,5 +1,6 @@
 import pandas as pd
 from config import *
+import os 
 
 
 def store_sota_results(acc, rec, prec, f1, fpr, tn, fp, fn, tp):
@@ -20,7 +21,6 @@ def store_sota_results(acc, rec, prec, f1, fpr, tn, fp, fn, tp):
     print(PRINT_SEPARATOR)
 
     return sota_results
-
 
 def init_sequence_results_dict():
     return pd.DataFrame(columns=[
@@ -65,3 +65,53 @@ def store_sequence_results(df, latency_seq_res, seq_sota_eval, y_test_atk, test_
     }
     
     return pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+
+def store_results_for_attack_type(df):
+    # Calculate average, min, max, and std for each group
+    avg_result_df = df.agg({
+        'attack_len': ['mean', 'min', 'max', 'std'],
+        'fpr': 'mean',
+        'pr': 'mean',
+        'rec': 'mean',
+        'time_to_detect': ['mean', 'min', 'max', 'std'],
+        'idx_detection_rel': ['mean', 'min', 'max', 'std']}).reset_index()
+    avg_result_df.columns = ['_'.join(col) for col in avg_result_df.columns]
+    
+    return avg_result_df
+
+def store_overall_results(num_seq, target_fpr, df_detect):
+    # Calculate aggregated statistics
+    result_dict = {
+        'detected_sequences': len(df_detect),
+        'percent_detected_sequences':(num_seq - len(df_detect))/len(df_detect),
+        'avg_time_to_detect': df_detect['time_to_detect'].mean(),
+        'std_time_to_detect': df_detect['time_to_detect'].std(),
+        'min_time_to_detect': df_detect['time_to_detect'].min(),
+        'max_time_to_detect': df_detect['time_to_detect'].max(),
+        'avg_idx_detection_rel': df_detect['idx_detection_rel'].mean(),
+        'std_idx_detection_rel': df_detect['idx_detection_rel'].std(),
+        'min_idx_detection_rel': df_detect['idx_detection_rel'].min(),
+        'max_idx_detection_rel': df_detect['idx_detection_rel'].max(),
+        'target_fpr': target_fpr}
+    all_results_df = pd.DataFrame([result_dict])
+    
+    return all_results_df
+
+def all_latency_results_to_excel(results_p, target_fpr, df, df_detect, avg_result_df, detection_rate_df, all_results_df):
+    # Save the result and another DataFrame in the same Excel file
+    with pd.ExcelWriter(os.path.join(results_p,  target_fpr + '_all.xlsx'), engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='all_sequences_results')
+        df_detect.to_excel(writer, index=False, sheet_name='detected_sequences_results')
+        avg_result_df.to_excel(writer, index=False, sheet_name='avg_results_for_attack_type')
+        detection_rate_df.to_excel(writer, index=False, sheet_name='detection_rate_for_attack_type')
+        all_results_df.to_excel(writer, index=False, sheet_name='overall_results')
+
+def summary_fpr_latency_sdr_to_excel(results_p, df_fpr_out, df_sdr_out):
+    # Save the result and another DataFrame in the same Excel file
+    with pd.ExcelWriter(os.path.join(results_p,  'final/final_results.xlsx'), engine='xlsxwriter') as writer:
+        df_fpr_out.to_excel(writer, index=False, sheet_name='fpr_latency_tradeoff')
+        df_sdr_out.to_excel(writer, index=False, sheet_name='fpr_sdr_tradeoff')
+
+
+
+
