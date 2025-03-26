@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from loader import PathManager
 import sklearn
-import results_handler as rh 
+import results_handler as rh
 
 
 class Evaluator(ABC):

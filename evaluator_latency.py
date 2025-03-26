@@ -60,7 +60,7 @@ class LatencyEvaluator(Evaluator):
         self.avg_results = None
         self.tradeoff_summary = None
         super().__init__(results_p)
-        
+
     def evaluate(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
         
         results_p = self.check_if_out_path_is_given(results_p)
@@ -76,7 +76,7 @@ class LatencyEvaluator(Evaluator):
         self.tradeoff_summary =  self.summary_fpr_latency()
 
         return self.avg_results, self.tradeoff_summary
-        
+    
     def bin_preds_for_given_fpr(self, test_y, preds_proba, desired_fprs, verbose=False):
         #compute the roc curve using model prediction probabilities 
         #select the index of the fpr to consider, find the thresholds for the desired FPRs, and compute binary predictions based on FPR thresholds 
@@ -144,8 +144,7 @@ class LatencyEvaluator(Evaluator):
 
     def avg_fpr_latency(self, sequences_results, results_p=None):
         #if the path is not provided by argument take the one in object param.
-        if results_p == None:
-            results_p = self.results_p
+        results_p = self.check_if_out_path_is_given(results_p)
             
         for df in sequences_results: 
             num_seq = df.shape[0]

@@ -10,6 +10,7 @@ from matplotlib.pyplot import figure
 import pandas as pd 
 import loader as ld
 from evaluator_latency import LatencyEvaluator
+from evaluator_sota import SotaEvaluator
 import warnings
 from config import *
 
@@ -26,9 +27,10 @@ warnings.filterwarnings('ignore')
 pm = ld.PathManager('dos_mqtt_iot', 'xgb')
 dl = ld.DataLoader(pm)
 latency = LatencyEvaluator(pm)
+sota = SotaEvaluator(pm)
 
 # ## Evaluate overall performance:  (metrics balanced by model)
-#overall = ev.eval_overall(dl.test_y, dl.preds)
+sota.evaluate(dl.test_y, dl.test_multi, dl.preds_proba)
 
 # Plot curves
 #ev.plot_curves(dl.test_y, dl.preds_proba)
