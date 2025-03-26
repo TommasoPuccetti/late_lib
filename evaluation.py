@@ -27,10 +27,10 @@ dl = ld.DataLoader(pm)
 ev = Evaluator(pm)
 
 # ## Evaluate overall performance:  (metrics balanced by model)
-#overall = ev.eval_overall(dl.test_y, dl.preds)
+overall = ev.eval_overall(dl.test_y, dl.preds)
 
 # Plot curves
-#ev.plot_curves(dl.test_y, dl.preds_proba)
+ev.plot_curves(dl.test_y, dl.preds_proba)
 
 # Evaluate FPR / Latency trade-off
 sequences_results = ev.eval_fpr_latency(dl.test_y, dl.test_multi, dl.test_timestamp, dl.test_seq, dl.preds_proba)
