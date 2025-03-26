@@ -54,11 +54,29 @@ from evaluator import Evaluator
 warnings.filterwarnings('ignore')
 
 
-class LatencyEvaluator():
-    def __init__(self, paths: PathManager):
-        #TODO ? self.overall = {}
-        self.results_p = paths.results_p
+class LatencyEvaluator(Evaluator):
+    
+    def __init__(self, results_p: PathManager):
+        self.avg_results = None
+        self.tradeoff_summary = None
+        super().__init__(results_p)
+        
+    def evaluate(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
+        
+        results_p = self.check_if_out_path_is_given(results_p)
 
+        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fprs, verbose)
+
+        sequences_results_fprs = []
+        for bin_pred, des_fpr in zip(bin_preds_fpr, desired_fprs):
+            sequences_results = self.eval_all_attack_sequences(test_y, test_multi, test_timestamp, test_seq, bin_pred, des_fpr, results_p, verbose)
+            sequences_results_fprs.append(sequences_results)
+
+        self.avg_results = self.avg_fpr_latency(sequences_results_fprs)
+        self.tradeoff_summary =  self.summary_fpr_latency()
+
+        return self.avg_results, self.tradeoff_summary
+        
     def bin_preds_for_given_fpr(self, test_y, preds_proba, desired_fprs, verbose=False):
         #compute the roc curve using model prediction probabilities 
         #select the index of the fpr to consider, find the thresholds for the desired FPRs, and compute binary predictions based on FPR thresholds 
@@ -123,19 +141,6 @@ class LatencyEvaluator():
         if verbose: 
             sequences_results.to_csv(os.path.join(results_p,  str(desired_fpr) + '.csv'), index=None)
         return sequences_results
-        
-    def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
-        
-        results_p = self.check_if_out_path_is_given(results_p)
-
-        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fprs, verbose)
-
-        sequences_results_fprs = []
-        for bin_pred, des_fpr in zip(bin_preds_fpr, desired_fprs):
-            sequences_results = self.eval_all_attack_sequences(test_y, test_multi, test_timestamp, test_seq, bin_pred, des_fpr, results_p, verbose)
-            sequences_results_fprs.append(sequences_results)
-            
-        return sequences_results_fprs
 
     def avg_fpr_latency(self, sequences_results, results_p=None):
         #if the path is not provided by argument take the one in object param.
@@ -188,9 +193,10 @@ class LatencyEvaluator():
 
         df_fpr_out = pd.concat(rows_fpr, ignore_index=True)
         df_sdr_out = pd.concat(rows_sdr, ignore_index=True)
-        print(df_fpr_out)
-        print(df_sdr_out)
+        
         rh.summary_fpr_latency_sdr_to_excel(results_p, df_fpr_out, df_sdr_out)
+
+        return (df_fpr_out, df_sdr_out)
 
 
 

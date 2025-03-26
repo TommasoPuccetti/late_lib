@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import figure
 import pandas as pd 
 import loader as ld
-from evaluator import Evaluator
+from evaluator_latency import LatencyEvaluator
 import warnings
+from config import *
 
 warnings.filterwarnings('ignore')
 
@@ -24,20 +25,22 @@ warnings.filterwarnings('ignore')
 # Load Dataset and Model for evaluation 
 pm = ld.PathManager('dos_mqtt_iot', 'xgb')
 dl = ld.DataLoader(pm)
-ev = Evaluator(pm)
+latency = LatencyEvaluator(pm)
 
 # ## Evaluate overall performance:  (metrics balanced by model)
-overall = ev.eval_overall(dl.test_y, dl.preds)
+#overall = ev.eval_overall(dl.test_y, dl.preds)
 
 # Plot curves
-ev.plot_curves(dl.test_y, dl.preds_proba)
+#ev.plot_curves(dl.test_y, dl.preds_proba)
 
 # Evaluate FPR / Latency trade-off
-sequences_results = ev.eval_fpr_latency(dl.test_y, dl.test_multi, dl.test_timestamp, dl.test_seq, dl.preds_proba)
-avg_results = ev.avg_fpr_latency(sequences_results)
-ev.summary_fpr_latency()
+avg_results, tradeoff_summary = latency.evaluate(dl.test_y, dl.test_multi, dl.test_timestamp, dl.test_seq, dl.preds_proba)
 
 print(avg_results)
+print(PRINT_SEPARATOR)
+print(tradeoff_summary[0])
+print(PRINT_SEPARATOR)
+print(tradeoff_summary[1])
 
 
     

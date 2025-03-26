@@ -54,81 +54,29 @@ from evaluator import Evaluator
 warnings.filterwarnings('ignore')
 
 
-class LatencyEvaluator:
-    def __init__(self, paths: PathManager):
-        self.overall = {}
-        self.results_p = paths.results_p
-        
-    # === eval_sota ===
-    def eval_sota(self, test_y, preds):
-        
-        """
-        Computes classification metrics for evaluating an intrusion detection model.
-
-        #### Args:
-        ----------
-        - `test_y (np.ndarray)`: Ground truth labels (0 for normal, 1 for anomalous).
-        - `preds (np.ndarray)`: Predicted labels from the model (0 for normal, 1 for anomalous).
-
-        #### Returns:
-        ----------
-        dict: A dictionary containing the following metrics:
-            
-        - `accuracy (float)`: Overall classification accuracy.
-        - `recall (float)`: Proportion of actual positives correctly identified.
-        - `precision (float)`: Proportion of predicted positives that are actually positive.
-        - `f1_score (float)`: Harmonic mean of precision and recall.
-        - `fpr (float)`: False positive rate (FP / (FP + TN)).
-        - `tn, fp, fn, tp (int)`: Confusion matrix values.
-        """ 
+class LatencyEvaluator(Evaluator):
     
-        fp, fn, tp (int): confusion matrix values.
-        acc = sklearn.metrics.accuracy_score(test_y, preds)
-        rec = sklearn.metrics.recall_score(test_y, preds)
-        prec = sklearn.metrics.precision_score(test_y, preds)
-        f1 = sklearn.metrics.f1_score(test_y, preds)
-        tn, fp, fn, tp = sklearn.metrics.confusion_matrix(test_y, preds).ravel()
-        fpr = fp / fp + tn
+    def __init__(self, results_p: PathManager):
+        self.avg_results = None
+        self.tradeoff_summary = None
+        super().__init__(results_p)
         
-        sota_results = rh.store_sota_results(acc, rec, prec, f1, fpr, tn, fp, fn, tp)
-        self.overall = sota_results 
+    def evaluate(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
         
-        return sota_results
-    
-    def plot_roc(self, test_y, preds_proba, results_p=None):
-        if results_p == None:
-            results_p = self.results_p
-        plt.figure(dpi=400)
-        fpr, tpr, _ = metrics.roc_curve(test_y,  preds_proba[:,1])
-        plt.plot(fpr, tpr)
-        plt.ylabel('Recall')
-        plt.xlabel('False Positive Rate')
-        plt.savefig(os.path.join(results_p, "roc_curve,pdf"), format='pdf', bbox_inches='tight')
-        plt.show()
+        results_p = self.check_if_out_path_is_given(results_p)
 
-    def plot_precision_recall(self, test_y, preds_proba, results_p=None):
-        if results_p == None:
-            results_p = self.results_p
-        plt.figure(dpi=400)
-        fpr, tpr, _ = metrics.precision_recall_curve(test_y,  preds_proba[:,1])
-        plt.plot(fpr, tpr)
-        plt.ylabel('Precision')
-        plt.xlabel('Recall')
-        plt.savefig(os.path.join(results_p, "precision_recall_curve,pdf"), format='pdf', bbox_inches='tight')
-        plt.show()
+        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fprs, verbose)
 
-    def plot_curves(self, test_y, preds_proba, results_p=None):
-        if results_p == None:
-            results_p = self.results_p
-        self.plot_precision_recall(test_y, preds_proba, results_p)
-        self.plot_roc(test_y, preds_proba, results_p)
+        sequences_results_fprs = []
+        for bin_pred, des_fpr in zip(bin_preds_fpr, desired_fprs):
+            sequences_results = self.eval_all_attack_sequences(test_y, test_multi, test_timestamp, test_seq, bin_pred, des_fpr, results_p, verbose)
+            sequences_results_fprs.append(sequences_results)
 
-    def check_if_out_path_is_given(self, results_p):
-        #if the path is not provided by argument take the one in object param.
-        if results_p == None:
-            results_p = self.results_p
-        return results_p    
+        self.avg_results = self.avg_fpr_latency(sequences_results_fprs)
+        self.tradeoff_summary =  self.summary_fpr_latency()
 
+        return self.avg_results, self.tradeoff_summary
+        
     def bin_preds_for_given_fpr(self, test_y, preds_proba, desired_fprs, verbose=False):
         #compute the roc curve using model prediction probabilities 
         #select the index of the fpr to consider, find the thresholds for the desired FPRs, and compute binary predictions based on FPR thresholds 
@@ -193,19 +141,6 @@ class LatencyEvaluator:
         if verbose: 
             sequences_results.to_csv(os.path.join(results_p,  str(desired_fpr) + '.csv'), index=None)
         return sequences_results
-        
-    def eval_fpr_latency(self, test_y, test_multi, test_timestamp, test_seq, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
-        
-        results_p = self.check_if_out_path_is_given(results_p)
-
-        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fprs, verbose)
-
-        sequences_results_fprs = []
-        for bin_pred, des_fpr in zip(bin_preds_fpr, desired_fprs):
-            sequences_results = self.eval_all_attack_sequences(test_y, test_multi, test_timestamp, test_seq, bin_pred, des_fpr, results_p, verbose)
-            sequences_results_fprs.append(sequences_results)
-            
-        return sequences_results_fprs
 
     def avg_fpr_latency(self, sequences_results, results_p=None):
         #if the path is not provided by argument take the one in object param.
@@ -258,9 +193,10 @@ class LatencyEvaluator:
 
         df_fpr_out = pd.concat(rows_fpr, ignore_index=True)
         df_sdr_out = pd.concat(rows_sdr, ignore_index=True)
-        print(df_fpr_out)
-        print(df_sdr_out)
+        
         rh.summary_fpr_latency_sdr_to_excel(results_p, df_fpr_out, df_sdr_out)
+
+        return (df_fpr_out, df_sdr_out)
 
 
 
