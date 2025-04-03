@@ -57,48 +57,71 @@ warnings.filterwarnings('ignore')
 class SotaEvaluator(Evaluator):
     
     def __init__(self, results_p: PathManager):
-        #self.avg_results = None
-        #self.tradeoff_summary = None
+        self.sota_results_fprs = None
         super().__init__(results_p)
      
     def evaluate(self, test_y, test_multi, preds_proba, desired_fprs=DESIRED_FPRS, results_p=None, verbose=False):
+        
         results_p = self.check_if_out_path_is_given(results_p)
-        for desired_fpr in desired_fprs:
-            metrics_list = []
-            attacks = np.unique(test_multi)
-            atk_index_list = [np.where(test_multi == value)[0].tolist() for value in attacks]
-            preds = 
-            print(preds.shape)
-            fpr, tpr, thresholds = metrics.roc_curve(test_y, preds)
-            precision, recall, thr = metrics.precision_recall_curve(test_y,  preds)
-            
-            index = np.argmax(fpr > desired_fpr)
-            fpr_threshold = thresholds[index]
-            
-            bin_preds = (preds > fpr_threshold).astype(int)
-            
+
+        self.plot_curves(test_y, preds_proba, results_p=results_p)
+        
+        attacks = np.unique(test_multi)
+        atk_index_list = [np.where(test_multi == value)[0].tolist() for value in attacks]
+        
+        bin_preds_fpr = self.bin_preds_for_given_fpr(test_y, preds_proba, desired_fprs, verbose)
+
+        sota_results_fprs = []
+        
+        for bin_pred, desired_fpr in zip(bin_preds_fpr, desired_fprs):
+            sota_results_fpr = []
+
             for indexes, i in zip(atk_index_list, range(0, len(atk_index_list))):
-                
-                acc = sklearn.metrics.accuracy_score(test_y[indexes], bin_preds[indexes])
-                pr = sklearn.metrics.precision_score(test_y[indexes], bin_preds[indexes])
-                rec = sklearn.metrics.recall_score(test_y[indexes], bin_preds[indexes])
-                f1 = sklearn.metrics.f1_score(test_y[indexes], bin_preds[indexes])
+
+                sota_results = self.eval_sota(test_y[indexes], bin_pred[indexes])
+                sota_results['attack'] = attacks[i]
+                sota_results_fpr.append(sota_results)
             
-                # Append metrics to the list as a dictionary
-                metrics_list.append({
-                        "File": str(desired_fpr),
-                        "Attack": attacks[i],
-                        "Accuracy": acc,
-                        "Precision": pr,
-                        "Recall": rec,
-                        "F1 Score": f1})
-                print(metrics)
-            
-                # Convert the list of dictionaries into a DataFrame
-            df = pd.DataFrame(metrics_list)
+            df = pd.DataFrame(sota_results_fpr)
             df.to_csv(os.path.join(results_p, str(desired_fpr) + '.csv'))
-        
-        
+            sota_results_fprs.append(df)
+            
+        self.sota_results_fprs = sota_results_fprs
+
+        return sota_results_fprs
+
+    def evaluate_bin_preds(self, test_y, preds):
+        return self.eval_sota(test_y, preds)
+
+    def plot_curves(self, test_y, preds_proba, results_p=None):
+            if results_p == None:
+                results_p = self.results_p
+            self.plot_precision_recall(test_y, preds_proba, results_p=results_p)
+            self.plot_roc(test_y, preds_proba, results_p=results_p) 
+
+    def plot_roc(self, test_y, preds_proba, results_p=None):
+            if results_p == None:
+                results_p = self.results_p
+            plt.figure(dpi=400)
+            fpr, tpr, _ = metrics.roc_curve(test_y,  preds_proba[:,1])
+            plt.plot(fpr, tpr)
+            plt.ylabel('Recall')
+            plt.xlabel('False Positive Rate')
+            plt.savefig(os.path.join(results_p, "roc_curve.pdf"), format='pdf', bbox_inches='tight')
+            plt.show()
+
+    def plot_precision_recall(self, test_y, preds_proba, results_p=None):
+            if results_p == None:
+                results_p = self.results_p
+            plt.figure(dpi=400)
+            fpr, tpr, _ = metrics.precision_recall_curve(test_y,  preds_proba[:,1])
+            plt.plot(fpr, tpr)
+            plt.ylabel('Precision')
+            plt.xlabel('Recall')
+            plt.savefig(os.path.join(results_p, "precision_recall_curve.pdf"), format='pdf', bbox_inches='tight')
+            plt.show()
+
+       
 
 
 

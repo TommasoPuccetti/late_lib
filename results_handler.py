@@ -15,10 +15,12 @@ def store_sota_results(acc, rec, prec, f1, fpr, tn, fp, fn, tp):
         "fn": fn,
         "tp": tp
     }
-
+    """
+    TODO verbose
     print("Accuracy: {}, \nRecall: {}, \nPrecision: {}, \nF1-Score: {}".format(acc, rec, prec, f1))
     print("TP: {}, \nFP: {}, \nTN: {}, \nFN: {}".format(tp, fp, tn, fn))
     print(PRINT_SEPARATOR)
+    """
 
     return sota_results
 
@@ -76,28 +78,38 @@ def store_results_for_attack_type(df):
         'time_to_detect': ['mean', 'min', 'max', 'std'],
         'idx_detection_rel': ['mean', 'min', 'max', 'std']}).reset_index()
     avg_result_df.columns = ['_'.join(col) for col in avg_result_df.columns]
-    
+    avg_result_df = convert_timedelta_to_seconds(avg_result_df)
     return avg_result_df
 
-def store_overall_results(num_seq, target_fpr, df_detect):
+def store_overall_results(target_fpr, df, num_detected):
     # Calculate aggregated statistics
     result_dict = {
-        'detected_sequences': len(df_detect),
-        'percent_detected_sequences':(num_seq - len(df_detect))/len(df_detect),
-        'avg_time_to_detect': df_detect['time_to_detect'].mean(),
-        'std_time_to_detect': df_detect['time_to_detect'].std(),
-        'min_time_to_detect': df_detect['time_to_detect'].min(),
-        'max_time_to_detect': df_detect['time_to_detect'].max(),
-        'avg_idx_detection_rel': df_detect['idx_detection_rel'].mean(),
-        'std_idx_detection_rel': df_detect['idx_detection_rel'].std(),
-        'min_idx_detection_rel': df_detect['idx_detection_rel'].min(),
-        'max_idx_detection_rel': df_detect['idx_detection_rel'].max(),
+        'detected_sequences': num_detected,
+        'all_sequences': df.shape[0],
+        'percent_detected_sequences': num_detected / df.shape[0],
+        'avg_time_to_detect': df['time_to_detect'].mean(),
+        'std_time_to_detect': df['time_to_detect'].std(),
+        'min_time_to_detect': df['time_to_detect'].min(),
+        'max_time_to_detect': df['time_to_detect'].max(),
+        'avg_idx_detection_rel': df['idx_detection_rel'].mean(),
+        'std_idx_detection_rel': df['idx_detection_rel'].std(),
+        'min_idx_detection_rel': df['idx_detection_rel'].min(),
+        'max_idx_detection_rel': df['idx_detection_rel'].max(),
         'target_fpr': target_fpr}
     all_results_df = pd.DataFrame([result_dict])
     
     return all_results_df
 
-def all_latency_results_to_excel(results_p, target_fpr, df, df_detect, avg_result_df, detection_rate_df, all_results_df):
+def convert_timedelta_to_seconds(data):
+        for col in data.select_dtypes(include=['timedelta64']):
+            data[col] = data[col].dt.total_seconds()  # Convert to float seconds
+        return data
+
+def all_latency_results_to_excel(results_p, target_fpr, df, avg_result_df, detection_rate_df, all_results_df):
+
+    df = convert_timedelta_to_seconds(df)
+    df_detect = df[df['detected'] != 0]
+    
     # Save the result and another DataFrame in the same Excel file
     with pd.ExcelWriter(os.path.join(results_p,  target_fpr + '_all.xlsx'), engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='all_sequences_results')
@@ -105,12 +117,14 @@ def all_latency_results_to_excel(results_p, target_fpr, df, df_detect, avg_resul
         avg_result_df.to_excel(writer, index=False, sheet_name='avg_results_for_attack_type')
         detection_rate_df.to_excel(writer, index=False, sheet_name='detection_rate_for_attack_type')
         all_results_df.to_excel(writer, index=False, sheet_name='overall_results')
+        all_results_df[['detected_sequences', 'all_sequences', 'percent_detected_sequences', 'target_fpr']].to_excel(writer, index=False, sheet_name='detection_rate_overall')
 
-def summary_fpr_latency_sdr_to_excel(results_p, df_fpr_out, df_sdr_out):
+def summary_fpr_latency_sdr_to_excel(results_p, df_fpr_out, df_sdr_out, df_sdr_out_all):
     # Save the result and another DataFrame in the same Excel file
-    with pd.ExcelWriter(os.path.join(results_p,  'final/final_results.xlsx'), engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(os.path.join(results_p,  'final_results.xlsx'), engine='xlsxwriter') as writer:
         df_fpr_out.to_excel(writer, index=False, sheet_name='fpr_latency_tradeoff')
         df_sdr_out.to_excel(writer, index=False, sheet_name='fpr_sdr_tradeoff')
+        df_sdr_out_all.to_excel(writer, index=False, sheet_name='fpr_sdr_overall')
 
 
 

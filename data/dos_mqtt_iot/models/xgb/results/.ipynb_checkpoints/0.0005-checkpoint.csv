@@ -1,7 +1,0 @@
-,File,Attack,Accuracy,Precision,Recall,F1 Score
-0,0.0005,BF1_DDoS_AD,0.0,0.0,0.0,0.0
-1,0.0005,Delay_DDoS_AD,0.0,0.0,0.0,0.0
-2,0.0005,SYN-DDoS-AD,0.0,0.0,0.0,0.0
-3,0.0005,Sub_DDoS_AD,0.0,0.0,0.0,0.0
-4,0.0005,WILL_DDoS_AD,0.0,0.0,0.0,0.0
-5,0.0005,normal,1.0,0.0,0.0,0.0
