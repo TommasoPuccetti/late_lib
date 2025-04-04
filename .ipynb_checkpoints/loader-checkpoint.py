@@ -63,11 +63,25 @@ class PathManager:
         return os.path.join(self.files, "raw/converted/normal/merged_test_normal.csv")
     @property
     def atest_csvs_p(self):
-        return os.path.join(self.files, "raw/converted/attacks/test")
+        attacks_root_test = os.path.join(self.files, "raw/converted/attacks/test") 
+        files = os.listdir(attacks_root_test)
+        attack_files_test = [file for file in files if file.endswith('.csv') and file]
+        attack_files_test_p = [os.path.join(attacks_root_test, file) for file in attack_files_test]
+        return attack_files_test_p
     @property
     def atrain_csvs_p(self):
-        return os.path.join(self.files, "raw/converted/attacks/train")
-    
+        attacks_root_train = os.path.join(self.files, "raw/converted/attacks/train") 
+        files = os.listdir(attacks_root_train)
+        attack_files_train = [file for file in files if file.endswith('.csv') and file]
+        attack_files_train_p = [os.path.join(attacks_root_train, file) for file in attack_files_train]
+        return attack_files_train_p
+    @property
+    def out_train_p(self):
+        return os.path.join(self.files, "train_test/train_set.csv")
+    @property
+    def out_test_p(self):
+        return os.path.join(self.files, "train_test/test_set.csv")
+        
     def print_paths():
         print("Dataset:  {}, \nModel:  {}".format(preds, self.model))
         print("Dataset path:  {}, \nModel path:  {}".format(self.files, self.target_model))
