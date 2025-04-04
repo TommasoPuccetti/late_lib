@@ -55,12 +55,26 @@ class PathManager:
     @property
     def results_p(self):
         return os.path.join(self.target_model, "results")
+    @property
+    def ntest_csv_p(self):
+        return os.path.join(self.files, "raw/converted/normal/merged_test_normal.csv")
+    @property
+    def ntrain_csv_p(self):
+        return os.path.join(self.files, "raw/converted/normal/merged_test_normal.csv")
+    @property
+    def atest_csvs_p(self):
+        return os.path.join(self.files, "raw/converted/attacks/test")
+    @property
+    def atrain_csvs_p(self):
+        return os.path.join(self.files, "raw/converted/attacks/train")
     
     def print_paths():
         print("Dataset:  {}, \nModel:  {}".format(preds, self.model))
         print("Dataset path:  {}, \nModel path:  {}".format(self.files, self.target_model))
         print("test_y path:  {}, \ntest_seq path:  {}, \ntest_multi path {}".format(test_y_p, test_seq_p, test_multi_p))
         print("preds_proba path:  {}, \npreds path:  {}".format(preds_proba_p, preds))
+        print("Converted normal test path:  {}, \ntrain path:  {}".format(ntrain_csv_p, ntest_csv_p))
+        print("Converted attacks test path:  {}, \ntrain path:  {}".format(atrain_csv_p, atest_csv_p))
         print(PRINT_SEPARATOR)
 
 
@@ -96,3 +110,4 @@ class DataLoader:
     @property
     def preds(self):
         return np.load(self.paths.preds_p, allow_pickle=True)
+
